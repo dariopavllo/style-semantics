@@ -1,0 +1,6 @@
+checkpoints/
+results/
+__pycache__/
+*.tar.xz
+*.zip
+*.py[cod]
