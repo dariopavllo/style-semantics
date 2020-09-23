@@ -37,6 +37,7 @@ class SparseDataset(BaseDataset):
         self.attribute_hook = None
         self.class_hook = None
         self.threshold = 0.2
+        self.nms_iou = 0.7
         self.manual_caption_id = 0
 
         label_paths, image_paths, precomputed_captions_paths = self.get_paths(opt)
@@ -342,7 +343,7 @@ class SparseDataset(BaseDataset):
                                 m1 = masks[:, :, i1]
                                 m2 = masks[:, :, i2]
                                 overlap_mask = iou_mask(m1, m2)
-                                if overlap_mask > 0.7:
+                                if overlap_mask > self.nms_iou:
                                     if scores[i1] > scores[i2]:
                                         valid[i2] = False
 
@@ -379,12 +380,11 @@ class SparseDataset(BaseDataset):
                             continue # Do not draw this object
                         classes[idx] = vg_labels.index(new_class)
                         class_name = new_class
+                    else:
+                        delta_pos = (0, 0)
                         
                     if classes[idx] in self.remapped_idx:
                         bool_mask = masks[:, :, idx].astype('bool')
-                            
-                        if self.class_hook is not None:
-                            bool_mask = shift(bool_mask, delta_pos, order=0)
                             
                         if np.count_nonzero(bool_mask) == 0:
                             continue
@@ -431,9 +431,22 @@ class SparseDataset(BaseDataset):
                             'idx': idx,
                             'original_class_name': original_class_name,
                             'is_foreground': is_foreground,
+                            'delta_pos': delta_pos,
                         })
                         render_queue.append(candidate[-1])
                         
+                
+                if self.class_hook is not None:
+                    # Propagate manipulations
+                    def propagate_translation(nodes, parent_delta):
+                        for cur_node in nodes:
+                            delta = (cur_node['delta_pos'][0] + parent_delta[0], cur_node['delta_pos'][1] + parent_delta[1])
+                            if delta != (0, 0):
+                                cur_node['mask'] = shift(cur_node['mask'], delta, order=0)
+                            propagate_translation(cur_node['children'], delta)
+                                  
+                    propagate_translation(scene_graph, (0, 0))
+                
                 for element in render_queue:
                     bool_mask = element['mask']
                     cl = element['class']
